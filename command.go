@@ -16,7 +16,7 @@ import (
 	"golang.org/x/oauth2"
 )
 
-func Command(owner, repo string) *cobra.Command {
+func Command(owner, repo string, options ...Option) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "update",
 		Short: "Download the latest release from GitHub",
@@ -26,7 +26,7 @@ If the GITHUB_TOKEN environment variable is set, it will be used for any GitHub 
 
 GITHUB_TOKEN is required for private repositories.`,
 		Run: func(cmd *cobra.Command, args []string) {
-			if err := update(cmd, owner, repo); err != nil {
+			if err := update(cmd, owner, repo, options); err != nil {
 				fmt.Fprintf(cmd.OutOrStderr(), "Error: %v", err)
 			}
 		},
@@ -36,14 +36,30 @@ GITHUB_TOKEN is required for private repositories.`,
 	return cmd
 }
 
-func update(cmd *cobra.Command, owner, repo string) (updateErr error) {
+func update(cmd *cobra.Command, owner, repo string, options []Option) (updateErr error) {
 	ctx := context.Background()
 
-	out := log.New(cmd.OutOrStdout(), "", 0)
-	debug := log.New(io.Discard, "DEBUG: ", log.Lmsgprefix)
-	if isDebug, _ := cmd.Flags().GetBool("debug"); isDebug {
-		debug.SetOutput(cmd.OutOrStdout())
+	debugOut := io.Discard
+	if debug, _ := cmd.Flags().GetBool("debug"); debug {
+		debugOut = cmd.OutOrStdout()
 	}
+
+	oc := &optionCtx{
+		logger:      log.New(cmd.OutOrStdout(), "", 0),
+		debugLogger: log.New(debugOut, "DEBUG: ", log.Lmsgprefix),
+		errorLogger: log.New(cmd.OutOrStderr(), "ERROR: ", log.Lmsgprefix),
+		assetIsCompatibleFunc: func(asset *github.ReleaseAsset) bool {
+			return strings.Contains(asset.GetName(), runtime.GOOS)
+		},
+	}
+	for _, o := range options {
+		o.apply(oc)
+	}
+
+	logger := oc.logger
+	debugLogger := oc.debugLogger
+	errorLogger := oc.errorLogger
+	isCompatible := oc.assetIsCompatibleFunc
 
 	var tc *http.Client
 	token := os.Getenv("GITHUB_TOKEN")
@@ -64,20 +80,20 @@ func update(cmd *cobra.Command, owner, repo string) (updateErr error) {
 	}
 	currentVersion := cmd.Root().Version
 
-	debug.Printf("Found release %s, current version is %s", release.GetName(), currentVersion)
+	debugLogger.Printf("Found release %s, current version is %s", release.GetName(), currentVersion)
 
 	if release.GetName() == currentVersion {
-		out.Printf("Already up to date\n")
+		logger.Printf("Already up to date\n")
 		return nil
 	}
 
-	out.Printf("Updating to %s\n", release.GetName())
+	logger.Printf("Updating to %s\n", release.GetName())
 
 	var assetID int64
 	for _, asset := range release.Assets {
-		debug.Printf("Asset name: %s, id: %d, download at: %s", asset.GetName(), asset.GetID(), asset.GetBrowserDownloadURL())
-		if strings.Contains(asset.GetName(), runtime.GOOS) {
-			debug.Printf("Will download asset %d", asset.GetID())
+		debugLogger.Printf("Asset name: %s, id: %d, download at: %s", asset.GetName(), asset.GetID(), asset.GetBrowserDownloadURL())
+		if isCompatible(asset) {
+			debugLogger.Printf("Will download asset %d", asset.GetID())
 			assetID = asset.GetID()
 			break
 		}
@@ -94,7 +110,7 @@ func update(cmd *cobra.Command, owner, repo string) (updateErr error) {
 	defer assetReader.Close()
 
 	outPath := os.Args[0]
-	debug.Printf("Got asset response, will write to %s", outPath)
+	debugLogger.Printf("Got asset response, will write to %s", outPath)
 
 	tmpDir, err := os.MkdirTemp("", repo+"-bak-")
 	if err != nil {
@@ -103,7 +119,7 @@ func update(cmd *cobra.Command, owner, repo string) (updateErr error) {
 	defer os.RemoveAll(tmpDir)
 
 	bakFile := filepath.Join(tmpDir, filepath.Base(outPath))
-	debug.Printf("Creating backup file: %s", bakFile)
+	debugLogger.Printf("Creating backup file: %s", bakFile)
 
 	if err := os.Rename(outPath, bakFile); err != nil {
 		return fmt.Errorf("rename old executable: %v", err)
@@ -111,7 +127,7 @@ func update(cmd *cobra.Command, owner, repo string) (updateErr error) {
 	defer func() {
 		if updateErr != nil {
 			if err := os.Rename(outPath, bakFile); err != nil {
-				fmt.Fprintf(cmd.OutOrStderr(), "ERROR: failed to restore backup file after installation error: %v", err)
+				errorLogger.Printf("failed to restore backup file after installation error: %v", err)
 			}
 		}
 	}()
