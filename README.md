@@ -6,7 +6,7 @@ Provides a [cobra](https://github.com/spf13/cobra) command to allow your apps to
 
 1. Add the command to your Cobra app, passing in the owner/repo where new releases will be downloaded from:
     ```go
-    import "github.com/Shamus03/cobra-update"
+    import update "github.com/Shamus03/cobra-update"
 
     func init() {
         rootCmd.AddCommand(update.Command("Shamus03", "munn"))
