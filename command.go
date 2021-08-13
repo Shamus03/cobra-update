@@ -109,7 +109,10 @@ func update(cmd *cobra.Command, owner, repo string, options []Option) (updateErr
 	}
 	defer assetReader.Close()
 
-	outPath := os.Args[0]
+	outPath, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("get executable path: %v", err)
+	}
 	debugLogger.Printf("Got asset response, will write to %s", outPath)
 
 	tmpDir, err := os.MkdirTemp("", repo+"-bak-")
