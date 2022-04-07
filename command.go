@@ -144,7 +144,7 @@ func update(cmd *cobra.Command, owner, repo string, options []Option) (updateErr
 		}
 	}()
 
-	f, err := os.Create(outPath)
+	f, err := os.OpenFile(outPath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0766)
 	if err != nil {
 		return fmt.Errorf("create new executable: %v", err)
 	}
