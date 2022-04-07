@@ -58,6 +58,8 @@ func update(cmd *cobra.Command, owner, repo string, options []Option) (updateErr
 	ctx := context.Background()
 
 	oc := defaultOptions()
+	oc.logger.SetOutput(cmd.OutOrStdout())
+	oc.errorLogger.SetOutput(cmd.OutOrStderr())
 	for _, o := range options {
 		o.apply(oc)
 	}
