@@ -7,10 +7,11 @@ import (
 )
 
 type optionCtx struct {
-	logger                *log.Logger
-	debugLogger           *log.Logger
-	errorLogger           *log.Logger
-	assetIsCompatibleFunc func(*github.ReleaseAsset) bool
+	logger                             *log.Logger
+	debugLogger                        *log.Logger
+	errorLogger                        *log.Logger
+	assetIsCompatibleFunc              func(*github.ReleaseAsset) bool
+	githubTokenEnvironmentVariableName string
 }
 
 type Option interface {
@@ -63,4 +64,16 @@ type setErrorLoggerFlags struct {
 
 func (o setErrorLoggerFlags) apply(ctx *optionCtx) {
 	ctx.errorLogger.SetFlags(o.flags)
+}
+
+func SetGithubTokenEnvironmentVariableName(name string) Option {
+	return setGithubTokenEnvironmentVariableName{name}
+}
+
+type setGithubTokenEnvironmentVariableName struct {
+	name string
+}
+
+func (o setGithubTokenEnvironmentVariableName) apply(ctx *optionCtx) {
+	ctx.githubTokenEnvironmentVariableName = o.name
 }

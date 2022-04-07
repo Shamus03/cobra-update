@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -16,15 +17,32 @@ import (
 	"golang.org/x/oauth2"
 )
 
+func defaultOptions() *optionCtx {
+	return &optionCtx{
+		logger:      log.New(ioutil.Discard, "", 0),
+		debugLogger: log.New(ioutil.Discard, "DEBUG: ", log.Lmsgprefix),
+		errorLogger: log.New(ioutil.Discard, "ERROR: ", log.Lmsgprefix),
+		assetIsCompatibleFunc: func(asset *github.ReleaseAsset) bool {
+			return strings.Contains(asset.GetName(), runtime.GOOS)
+		},
+		githubTokenEnvironmentVariableName: "GITHUB_TOKEN",
+	}
+}
+
 func Command(owner, repo string, options ...Option) *cobra.Command {
+	oc := defaultOptions()
+	for _, o := range options {
+		o.apply(oc)
+	}
+
 	cmd := &cobra.Command{
 		Use:   "update",
 		Short: "Download the latest release from GitHub",
-		Long: `Download the latest release from GitHub and install it in-place.
+		Long: fmt.Sprintf(`Download the latest release from GitHub and install it in-place.
 
-If the GITHUB_TOKEN environment variable is set, it will be used for any GitHub API requests.
+If the %[1]s environment variable is set, it will be used for any GitHub API requests.
 
-GITHUB_TOKEN is required for private repositories.`,
+%[1]s is required for private repositories.`, oc.githubTokenEnvironmentVariableName),
 		Run: func(cmd *cobra.Command, args []string) {
 			if err := update(cmd, owner, repo, options); err != nil {
 				fmt.Fprintf(cmd.OutOrStderr(), "Error: %v", err)
@@ -39,21 +57,12 @@ GITHUB_TOKEN is required for private repositories.`,
 func update(cmd *cobra.Command, owner, repo string, options []Option) (updateErr error) {
 	ctx := context.Background()
 
-	debugOut := io.Discard
-	if debug, _ := cmd.Flags().GetBool("debug"); debug {
-		debugOut = cmd.OutOrStdout()
-	}
-
-	oc := &optionCtx{
-		logger:      log.New(cmd.OutOrStdout(), "", 0),
-		debugLogger: log.New(debugOut, "DEBUG: ", log.Lmsgprefix),
-		errorLogger: log.New(cmd.OutOrStderr(), "ERROR: ", log.Lmsgprefix),
-		assetIsCompatibleFunc: func(asset *github.ReleaseAsset) bool {
-			return strings.Contains(asset.GetName(), runtime.GOOS)
-		},
-	}
+	oc := defaultOptions()
 	for _, o := range options {
 		o.apply(oc)
+	}
+	if debug, _ := cmd.Flags().GetBool("debug"); debug {
+		oc.debugLogger.SetOutput(cmd.OutOrStdout())
 	}
 
 	logger := oc.logger
@@ -62,7 +71,7 @@ func update(cmd *cobra.Command, owner, repo string, options []Option) (updateErr
 	isCompatible := oc.assetIsCompatibleFunc
 
 	var tc *http.Client
-	token := os.Getenv("GITHUB_TOKEN")
+	token := os.Getenv(oc.githubTokenEnvironmentVariableName)
 	if token != "" {
 		ts := oauth2.StaticTokenSource(
 			&oauth2.Token{AccessToken: token},
@@ -74,7 +83,7 @@ func update(cmd *cobra.Command, owner, repo string, options []Option) (updateErr
 	release, resp, err := client.Repositories.GetLatestRelease(ctx, owner, repo)
 	if err != nil {
 		if resp.StatusCode == 404 {
-			return fmt.Errorf("getting latest release (if this is a private repo, you need to set the GITHUB_TOKEN environment variable): %v", err)
+			return fmt.Errorf("getting latest release (if this is a private repo, you need to set the %s environment variable): %v", oc.githubTokenEnvironmentVariableName, err)
 		}
 		return fmt.Errorf("getting latest release: %v", err)
 	}
