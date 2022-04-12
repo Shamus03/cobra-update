@@ -50,6 +50,7 @@ If the %[1]s environment variable is set, it will be used for any GitHub API req
 		},
 	}
 	cmd.Flags().Bool("debug", false, "show debug logs")
+	cmd.Flags().Bool("force", false, "force a re-download even if already up-to-date")
 
 	return cmd
 }
@@ -66,6 +67,8 @@ func update(cmd *cobra.Command, owner, repo string, options []Option) (updateErr
 	if debug, _ := cmd.Flags().GetBool("debug"); debug {
 		oc.debugLogger.SetOutput(cmd.OutOrStdout())
 	}
+
+	force, _ := cmd.Flags().GetBool("force")
 
 	logger := oc.logger
 	debugLogger := oc.debugLogger
@@ -95,7 +98,9 @@ func update(cmd *cobra.Command, owner, repo string, options []Option) (updateErr
 
 	if release.GetName() == currentVersion {
 		logger.Printf("Already up to date\n")
-		return nil
+		if !force {
+			return nil
+		}
 	}
 
 	logger.Printf("Updating to %s\n", release.GetName())
